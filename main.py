@@ -4,6 +4,11 @@ import numpy as np
 # Initialize video capture with the video file
 cap = cv2.VideoCapture(r'G:\Desktop\Script\lane_detection_CV\lanes_clip.mp4')
 
+# Check if the video file is opened correctly
+if not cap.isOpened():
+    print("Error: Could not open video file.")
+    exit()
+
 # Function to filter shades of gray, yellow, and white
 def filter_colors(frame):
     # Convert to HSV color space
@@ -46,6 +51,7 @@ while True:
     
     # If no frame is returned, exit the loop (end of video)
     if not ret:
+        print("End of video or cannot read the frame.")
         break
 
     # Filter the colors (shades of gray, yellow, and white) for line detection
@@ -82,7 +88,7 @@ while True:
             if abs(slope) < 0.1:  # Horizontal line (small slope)
                 horizontal_lines += 1
                 cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue for horizontal lines
-            elif abs(slope) > 0.6:  # Vertical line (large slope)
+            elif abs(slope) > 0.4:  # Vertical line (large slope)
                 vertical_lines += 1
                 cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
 
