@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import time
 
 # Initialize video capture with the video file
 cap = cv2.VideoCapture(r'G:\Desktop\Script\lane_detection_CV\lanes_clip.mp4')
@@ -15,16 +16,12 @@ def filter_colors(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
     # Define color ranges for gray, yellow, and white
-    # Gray: Low saturation, high value, within a certain range of hues
-    lower_gray = np.array([0, 0, 100])    # Low saturation, light gray
-    upper_gray = np.array([180, 50, 200])  # High value, mid gray
+    lower_gray = np.array([0, 0, 100])
+    upper_gray = np.array([180, 50, 200])
 
-    # Yellow: Hue range for yellow, moderate saturation and high value
-    # Adjusted the hue range and saturation range for a better detection of yellow
-    lower_yellow = np.array([15, 100, 100])  # Broader yellow range
+    lower_yellow = np.array([15, 100, 100])
     upper_yellow = np.array([40, 255, 255])
 
-    # White: High value, low saturation
     lower_white = np.array([0, 0, 180])
     upper_white = np.array([180, 30, 255])
     
@@ -42,8 +39,16 @@ def filter_colors(frame):
     
     return filtered_frame, mask_combined
 
-# Initialize list to store vertical line positions
-vertical_lines_positions = []
+# Initialize variables to track FPS and line counts
+frame_count = 0
+fps_list = []
+horizontal_lines_list = []
+vertical_lines_list = []
+
+max_horizontal_lines = 0
+max_vertical_lines = 0
+
+start_time = time.time()  # Track time for FPS calculation
 
 while True:
     # Read a frame from the video file
@@ -53,6 +58,9 @@ while True:
     if not ret:
         print("End of video or cannot read the frame.")
         break
+
+    # Increment frame count
+    frame_count += 1
 
     # Filter the colors (shades of gray, yellow, and white) for line detection
     filtered_frame, mask_combined = filter_colors(frame)
@@ -92,12 +100,26 @@ while True:
                 vertical_lines += 1
                 cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red for vertical lines
 
-                # Add vertical line position to the list
-                vertical_lines_positions.append((x1, x2))
+    # Update max horizontal and vertical lines
+    max_horizontal_lines = max(max_horizontal_lines, horizontal_lines)
+    max_vertical_lines = max(max_vertical_lines, vertical_lines)
 
-    # Add text to the frame showing the number of detected lines
+    # Add line counts to lists
+    horizontal_lines_list.append(horizontal_lines)
+    vertical_lines_list.append(vertical_lines)
+
+    # Calculate FPS for the current frame
+    current_time = time.time()
+    elapsed_time = current_time - start_time
+    if elapsed_time > 0:
+        fps = frame_count / elapsed_time
+        fps_list.append(fps)
+    else:
+        fps_list.append(0)
+
+    # Add text to the frame showing the number of detected lines and FPS
     font = cv2.FONT_HERSHEY_SIMPLEX
-    text = f'Horizontal: {horizontal_lines} | Vertical: {vertical_lines}'
+    text = f'FPS: {fps:.2f} | Horizontal: {horizontal_lines} | Vertical: {vertical_lines}'
     cv2.putText(frame, text, (10, 30), font, 1, (0, 255, 255), 2, cv2.LINE_AA)  # Yellow text
 
     # Display the original frame with the detected lines and line count overlaid
@@ -106,6 +128,18 @@ while True:
     # Exit the loop if the user presses the 'q' key
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
+
+# Calculate average FPS, horizontal lines, and vertical lines
+average_fps = np.mean(fps_list) if fps_list else 0
+average_horizontal_lines = np.mean(horizontal_lines_list) if horizontal_lines_list else 0
+average_vertical_lines = np.mean(vertical_lines_list) if vertical_lines_list else 0
+
+# Print the statistics at the end of the video execution
+print(f"Average FPS: {average_fps:.2f}")
+print(f"Average Horizontal Lines: {average_horizontal_lines:.2f}")
+print(f"Average Vertical Lines: {average_vertical_lines:.2f}")
+print(f"Max Horizontal Lines: {max_horizontal_lines}")
+print(f"Max Vertical Lines: {max_vertical_lines}")
 
 # Release the capture object and close any OpenCV windows
 cap.release()
