@@ -1,139 +1,78 @@
+# main.py
+import os
 import cv2
-import numpy as np
-import time
+from src.video_processing import initialize_video_capture, process_frame
+from src.utils import calculate_averages
+from src.overlay import add_custom_text, add_icon
 
-# Initialize video capture with the video file
-cap = cv2.VideoCapture(r'G:\Desktop\Script\lane_detection_CV\lanes_clip.mp4')
+# Custom font setup
+font_path = "assets/fonts/Ubuntu-Regular.ttf"  # Replace with the correct path to your .ttf font file
+font_size = 24
 
-if not cap.isOpened():
-    print("Error: Could not open video file.")
+# Load the FPS boost icon
+icon_path = "assets/fps_boost.png"  # Replace with the correct path to your icon file
+icon = cv2.imread(icon_path, cv2.IMREAD_UNCHANGED)  # Load with alpha channel if available
+
+# Check if the font exists
+if not os.path.exists(font_path):
+    print(f"Error: Font file not found at {font_path}.")
     exit()
 
-# Function to filter shades of gray, yellow, and white
-def filter_colors(frame):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_gray = np.array([0, 0, 100])
-    upper_gray = np.array([180, 50, 200])
-    lower_yellow = np.array([15, 100, 100])
-    upper_yellow = np.array([40, 255, 255])
-    lower_white = np.array([0, 0, 180])
-    upper_white = np.array([180, 30, 255])
-    
-    mask_gray = cv2.inRange(hsv, lower_gray, upper_gray)
-    mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
-    mask_white = cv2.inRange(hsv, lower_white, upper_white)
-    mask_combined = cv2.bitwise_or(mask_gray, mask_yellow)
-    mask_combined = cv2.bitwise_or(mask_combined, mask_white)
-    filtered_frame = cv2.bitwise_and(frame, frame, mask=mask_combined)
-    return filtered_frame
+# Main function
+def main():
+    # Initialize video capture
+    cap = initialize_video_capture(r'G:\Desktop\Script\lane_detection_CV\lanes_clip.mp4')
 
-# Function to calculate FPS using the old method
-def calculate_fps_old(start_time):
-    current_time = time.time()
-    elapsed_time = current_time - start_time
-    return 1 / elapsed_time if elapsed_time > 0 else 0, current_time
+    # Toggle FPS mode variable
+    use_optimized_fps = True
 
-# Function to calculate FPS every 30 frames
-def calculate_fps_new(frame_count, start_time):
-    if frame_count % 30 == 0 and frame_count > 0:
-        current_time = time.time()
-        elapsed_time = current_time - start_time
-        fps = 30 / elapsed_time if elapsed_time > 0 else 0
-        return fps, current_time
-    return None, start_time
+    # Statistics tracking
+    avg_vertical_lines = 0
+    avg_horizontal_lines = 0
+    max_vertical_lines = 0
+    max_horizontal_lines = 0
+    total_frames = 0
+    fps = 30  # Set an initial reasonable FPS value
 
-# Function to choose FPS calculation method
-def fps_boost(method, frame_count, start_time):
-    if method == "old":
-        return calculate_fps_old(start_time)
-    elif method == "new":
-        return calculate_fps_new(frame_count, start_time)
-    else:
-        raise ValueError("Invalid FPS calculation method. Use 'old' or 'new'.")
+    # Processing loop
+    while True:
+        ret, frame = cap.read()
+        
+        # Exit loop if no frame is returned
+        if not ret:
+            print("End of video or cannot read the frame.")
+            break
 
-# Set FPS calculation method: 'old' or 'new'
-fps_method = "old"  # Change to "old" to use the old method
+        # Count total frames
+        total_frames += 1
 
-# Initialize FPS variables
-frame_count = 0
-fps_list = []
-start_time = time.time()
-last_calculated_fps = 0
+        # Process the frame and update stats
+        frame, avg_horizontal_lines, avg_vertical_lines, max_horizontal_lines, max_vertical_lines, fps = process_frame(
+            frame, total_frames, avg_horizontal_lines, avg_vertical_lines, max_horizontal_lines, max_vertical_lines,
+            font_path, font_size, icon, use_optimized_fps
+        )
 
-# Initialize counters for average statistics
-total_horizontal_lines = 0
-total_vertical_lines = 0
-max_horizontal_lines = 0
-max_vertical_lines = 0
+        # Display the frame
+        cv2.imshow('Lane Detection', frame)
 
-# Main processing loop
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("End of video or cannot read the frame.")
-        break
+        # Check for key presses
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):  # Quit
+            break
+        elif key == ord('f'):  # Toggle FPS mode
+            use_optimized_fps = not use_optimized_fps
 
-    frame_count += 1
+    # Calculate averages and print stats
+    avg_horizontal_lines, avg_vertical_lines = calculate_averages(total_frames, avg_horizontal_lines, avg_vertical_lines)
+    print(f"Average FPS: {fps:.2f}")
+    print(f"Average Horizontal Lines: {avg_horizontal_lines:.2f}")
+    print(f"Average Vertical Lines: {avg_vertical_lines:.2f}")
+    print(f"Max Horizontal Lines: {max_horizontal_lines}")
+    print(f"Max Vertical Lines: {max_vertical_lines}")
 
-    # FPS Calculation
-    fps, start_time = fps_boost(fps_method, frame_count, start_time)
-    if fps is not None:
-        last_calculated_fps = fps
-        fps_list.append(fps)
+    # Release resources
+    cap.release()
+    cv2.destroyAllWindows()
 
-    # Filter colors for line detection
-    filtered_frame = filter_colors(frame)
-    gray = cv2.cvtColor(filtered_frame, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150)
-
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=50, maxLineGap=10)
-
-    horizontal_lines = 0
-    vertical_lines = 0
-
-    if lines is not None:
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            if x2 - x1 != 0:
-                slope = (y2 - y1) / (x2 - x1)
-            else:
-                slope = float('inf')
-
-            if abs(slope) < 0.1:  # Horizontal
-                horizontal_lines += 1
-                cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Blue
-            elif abs(slope) > 0.4:  # Vertical
-                vertical_lines += 1
-                cv2.line(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)  # Red
-
-    # Update line statistics
-    total_horizontal_lines += horizontal_lines
-    total_vertical_lines += vertical_lines
-    max_horizontal_lines = max(max_horizontal_lines, horizontal_lines)
-    max_vertical_lines = max(max_vertical_lines, vertical_lines)
-
-    # Display FPS and line statistics
-    text = f'FPS: {last_calculated_fps:.2f} | Horizontal: {horizontal_lines} | Vertical: {vertical_lines}'
-    cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
-
-    # Show the frame
-    cv2.imshow('Filtered Line Detection', frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Calculate average statistics
-average_fps = np.mean(fps_list) if fps_list else 0
-average_horizontal_lines = total_horizontal_lines / frame_count
-average_vertical_lines = total_vertical_lines / frame_count
-
-# Print summary
-print(f"Average FPS: {average_fps:.2f}")
-print(f"Average Horizontal Lines: {average_horizontal_lines:.2f}")
-print(f"Average Vertical Lines: {average_vertical_lines:.2f}")
-print(f"Max Horizontal Lines: {max_horizontal_lines}")
-print(f"Max Vertical Lines: {max_vertical_lines}")
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
